@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const STORAGE_KEY = "magicalMergeSave_v5";
+  const STORAGE_KEY = "magicalMergeSave_v8";
   const MAX_STAGE = 100;
   const SKILLS = [
     {id:"arcane",name:"Arcane Burst",icon:"⚡",description:"Damage every enemy.",unlockStage:1},
@@ -9,7 +9,8 @@
     {id:"meteor",name:"Starfall",icon:"☄️",description:"Heavy damage to the strongest enemy.",unlockStage:10}
   ];
   const defaultSave={accountLevel:1,accountXp:0,gems:0,coreLevel:1,stage:1,collectedUnits:0};
-  let save=loadSave(),state=null,selectedIndex=null,dragIndex=null,moveTimer=null;
+  let save=loadSave(),state=null,selectedIndex=null,dragIndex=null,moveTimer=null,dragOverIndex=null;
+  const PLAYER_COLS=7, PLAYER_ROWS=3, PLAYER_SIZE=21, ENEMY_COLS=7, ENEMY_ROWS=8;
   const $=id=>document.getElementById(id);
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 
@@ -26,12 +27,12 @@
   function newRun(stageNum){
     const d=stageData(stageNum);
     state={stage:stageNum,data:d,wave:1,turn:1,baseHp:100+(save.coreLevel-1)*8,maxBaseHp:100+(save.coreLevel-1)*8,
-      enemies:[],board:Array(21).fill(null),skillCooldowns:{arcane:0,guard:0,meteor:0},selectedSkill:"arcane",cleared:false,pickup:null};
+      enemies:[],board:Array(PLAYER_SIZE).fill(null),skillCooldowns:{arcane:0,guard:0,meteor:0},selectedSkill:"arcane",cleared:false,pickup:null};
     selectedIndex=null;dragIndex=null;moveTimer=null;
     $("world-label").textContent=`WORLD ${d.world}`;$("stage-label").textContent=`STAGE ${stageNum}`;
     // Start each lane with a unit near the base (right side).
-    state.board[4]={level:1,element:"🌱"};state.board[11]={level:1,element:"🌱"};state.board[18]={level:1,element:"🌱"};
-    spawnWave();renderBoard();updateSkillButtons();updateHud();log("Move your Magical Girls between the 21 spaces. Each lane attacks on its own.");
+    state.board[18]={level:1,element:"🌱"};state.board[19]={level:1,element:"🌱"};state.board[20]={level:1,element:"🌱"};
+    spawnWave();renderBoard();updateSkillButtons();updateHud();log("Magical Girls stay in the lower 7×3 field. Move one to end the turn; merges are free.");
     showScreen("game-screen");
   }
 
@@ -39,15 +40,32 @@
     const grid=$("grid");grid.innerHTML="";
     state.board.forEach((unit,i)=>{
       const slot=document.createElement("div");slot.className="slot";slot.dataset.index=i;
-      slot.addEventListener("dragover",e=>e.preventDefault());
-      slot.addEventListener("drop",e=>{e.preventDefault();moveUnit(dragIndex,i)});
       slot.addEventListener("click",()=>selectUnit(i));
+      slot.addEventListener("pointerenter",()=>{if(dragIndex!==null)markDragOver(i)});
+      slot.addEventListener("pointerup",e=>{if(dragIndex!==null){e.preventDefault();moveUnit(dragIndex,i)}});
       if(unit){
         const u=document.createElement("button");u.className=`unit level${Math.min(unit.level,4)}`;u.draggable=true;
         u.innerHTML=`<span>${unit.element}</span><small>Lv.${unit.level}</small>`;
-        u.addEventListener("dragstart",()=>{dragIndex=i;u.classList.add("dragging")});
-        u.addEventListener("dragend",()=>{dragIndex=null;u.classList.remove("dragging")});
-        u.addEventListener("pointerdown",()=>dragIndex=i);
+        u.addEventListener("dragstart",e=>{dragIndex=i;u.classList.add("dragging");e.dataTransfer?.setData("text/plain",String(i))});
+        u.addEventListener("dragend",()=>{dragIndex=null;clearDragOver();u.classList.remove("dragging")});
+        // Touch/pointer dragging for phones and tablets. Tap-to-select remains available as a fallback.
+        u.addEventListener("pointerdown",e=>{
+          if(e.pointerType!=="mouse")e.preventDefault();
+          dragIndex=i;selectedIndex=i;markDragOver(i);u.classList.add("dragging");
+        });
+        u.addEventListener("pointermove",e=>{
+          if(dragIndex!==i)return;
+          const el=document.elementFromPoint(e.clientX,e.clientY)?.closest?.(".slot");
+          if(el&&grid.contains(el))markDragOver(Number(el.dataset.index));
+        });
+        u.addEventListener("pointerup",e=>{
+          if(dragIndex!==i)return;
+          const el=document.elementFromPoint(e.clientX,e.clientY)?.closest?.(".slot");
+          const target=el&&grid.contains(el)?Number(el.dataset.index):i;
+          u.classList.remove("dragging");
+          if(target!==i)moveUnit(i,target);else{dragIndex=null;clearDragOver();renderBoard()}
+        });
+        u.addEventListener("pointercancel",()=>{dragIndex=null;clearDragOver();renderBoard()});
         u.addEventListener("click",e=>{e.stopPropagation();selectUnit(i)});
         slot.appendChild(u);
       }
@@ -55,6 +73,12 @@
     });
     renderPickup();highlightSelected();
   }
+
+  function markDragOver(i){
+    if(dragOverIndex===i)return;
+    clearDragOver();dragOverIndex=i;$(`grid`).children[i]?.classList.add("drag-over");
+  }
+  function clearDragOver(){if(dragOverIndex!==null){$(`grid`).children[dragOverIndex]?.classList.remove("drag-over");dragOverIndex=null}}
 
   function moveUnit(from,to){
     if(state?.cleared||state?.resolving||from==null||to==null||from===to||!state.board[from])return;
@@ -69,7 +93,7 @@
     }
     if(!b){
       state.board[to]=a;state.board[from]=null;
-      log(`Magical Girl moved to line ${Math.floor(to/7)+1}.`);
+      log(`Magical Girl moved to row ${Math.floor(to/PLAYER_COLS)+1}. Turn ends.`);
     }else{
       state.board[to]=a;state.board[from]=b;
       log("Positions swapped.");
@@ -85,9 +109,9 @@
 
   function spawnWave(){
     state.enemies=[];
-    const count=state.data.enemyCount+(state.wave-1);
+    const count=Math.min(ENEMY_COLS*ENEMY_ROWS, state.data.enemyCount+(state.wave-1));
     for(let i=0;i<count;i++){const boss=state.data.boss&&i===count-1,hp=state.data.enemyHp*(1+(state.wave-1)*.28)*(boss?2.4:1);
-      state.enemies.push({id:`e${Date.now()}-${i}-${Math.random()}`,hp,maxHp:hp,boss,emoji:boss?"👑":"👾",row:i%3,col:0+Math.floor(i/3)});
+      state.enemies.push({id:`e${Date.now()}-${i}-${Math.random()}`,hp,maxHp:hp,boss,emoji:boss?"👑":"👾",row:i%ENEMY_ROWS,col:Math.floor(i/ENEMY_ROWS)});
     }
     renderEnemies();updateHud();
   }
@@ -96,14 +120,14 @@
     const lane=$("enemy-lane");lane.innerHTML="";
     state.enemies.forEach(e=>{
       const wrap=document.createElement("div");wrap.className=`enemy-wrap${e.boss?" boss":""}`;
-      wrap.dataset.enemyId=e.id;wrap.style.gridRow=(e.row+1);wrap.style.gridColumn=Math.min(7,e.col+1);
+      wrap.dataset.enemyId=e.id;wrap.style.gridRow=(e.row+1);wrap.style.gridColumn=Math.min(ENEMY_COLS,e.col+1);
       const pct=clamp(e.hp/e.maxHp*100,0,100);
       wrap.innerHTML=`<div class="enemy-hp"><div style="width:${pct}%"></div></div><div class="enemy-hp-text">${Math.max(0,Math.ceil(e.hp))}/${Math.ceil(e.maxHp)}</div><div class="enemy">${e.emoji}</div>`;
       lane.appendChild(wrap);
     });
   }
 
-  function unitDamageForRow(row){let damage=0;for(let col=0;col<7;col++){const u=state.board[row*7+col];if(u)damage+=Math.pow(u.level,1.55)*4.5}return damage}
+  function unitDamageForRow(row){let damage=0;for(let col=0;col<PLAYER_COLS;col++){const u=state.board[row*PLAYER_COLS+col];if(u)damage+=Math.pow(u.level,1.55)*4.5}return damage}
 
   function fireProjectile(fromIndex,enemyId,onImpact){
     const unit=$("grid").children[fromIndex]?.querySelector(".unit"),enemy=document.querySelector(`[data-enemy-id="${CSS.escape(enemyId)}"] .enemy`),field=$("battlefield");
@@ -121,27 +145,47 @@
     setTimeout(()=>{d.remove();if(onDone)onDone()},120);
   }
 
+
   function attackPhase(){
     let shots=0;
-    for(let row=0;row<3;row++){
-      const target=state.enemies.find(e=>e.row===row);
-      if(!target)continue;
-      for(let col=0;col<7;col++){
-        const unit=state.board[row*7+col];
+    for(let row=0;row<PLAYER_ROWS;row++){
+      for(let col=0;col<PLAYER_COLS;col++){
+        const unit=state.board[row*PLAYER_COLS+col];
         if(!unit)continue;
+        const target=state.enemies
+          .filter(e=>e.col===col)
+          .sort((a,b)=>b.row-a.row)[0];
+        if(!target)continue;
         const dmg=Math.pow(unit.level,1.55)*4.5;
         shots++;
-        fireProjectile(row*7+col,target.id,()=>{});
-        target.hp-=dmg;
+        fireProjectile(row*PLAYER_COLS+col,target.id,()=>{
+          if(!state||state.cleared)return;
+          const live=state.enemies.find(e=>e.id===target.id);
+          if(!live)return;
+          live.hp-=dmg;
+          renderEnemies();
+        });
       }
     }
     if(shots)log(`${shots} Magical Girl projectile${shots===1?"":"s"} launched!`);
   }
 
-  function enemyPhase(){
-    const total=state.enemies.reduce((sum,e)=>sum+(e.boss?8:4),0);
-    state.baseHp=clamp(state.baseHp-total,0,state.maxBaseHp);
-    if(total)log(`Enemies strike the Crystal Heart for ${total} damage.`);
+  // Enemies advance only after the Magical Girls have attacked.
+  // An enemy deals damage exactly when it reaches the divider (row 8), then disappears.
+  function enemyAdvancePhase(){
+    let damage=0,breached=0;
+    state.enemies.forEach(e=>{e.row+=1});
+    state.enemies=state.enemies.filter(e=>{
+      if(e.row>=ENEMY_ROWS){
+        const hit=e.boss?8:4;
+        damage+=hit;breached++;return false;
+      }
+      return true;
+    });
+    state.baseHp=clamp(state.baseHp-damage,0,state.maxBaseHp);
+    renderEnemies();
+    if(breached)log(`${breached} enem${breached===1?"y":"ies"} reached the divider. Crystal Heart takes ${damage} damage.`);
+    return breached;
   }
 
   function endTurn(auto=false){
@@ -149,17 +193,23 @@
     state.resolving=true;
     state.turn++;Object.keys(state.skillCooldowns).forEach(k=>{if(state.skillCooldowns[k]>0)state.skillCooldowns[k]--});
     attackPhase();
-    // Give the player a short visual window before removing defeated enemies.
+    // Wait for the projectiles to visibly cross the battlefield and resolve their hits.
     setTimeout(()=>{
       if(state.cleared)return;
       cleanupEnemies();
       if(state.enemies.length===0){
+        if(state.wave<state.data.waves){state.wave++;spawnWave();maybeSpawnPickup();state.resolving=false;updateHud();updateSkillButtons()}
+        else victory();
+        return;
+      }
+      enemyAdvancePhase();
+      if(state.baseHp<=0){defeat();return}
+      if(state.enemies.length===0){
         if(state.wave<state.data.waves){state.wave++;spawnWave();maybeSpawnPickup()}
         else victory();
-      }else{enemyPhase();if(state.baseHp<=0)defeat()}
-      renderEnemies();updateHud();updateSkillButtons();
-      state.resolving=false;
-    },420);
+      }
+      updateHud();updateSkillButtons();state.resolving=false;
+    },500);
   }
 
   function cleanupEnemies(){state.enemies=state.enemies.filter(e=>e.hp>0);renderEnemies()}
