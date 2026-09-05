@@ -32,16 +32,16 @@ function highlightSelected(){if(selectedIndex!==null)$('grid').children[selected
 function elementForLevel(lvl){const els=['🌱','🔥','💧','⚡','🌙','🌟'];return els[Math.min(els.length-1,Math.floor((lvl-1)/2))]}
 function spawnWave(){
   state.enemies=[];
-  const count=Math.min(ENEMY_COLS*ENEMY_ROWS,state.data.enemyCount+(state.wave-1));
-  const cells=Array.from({length:ENEMY_COLS*ENEMY_ROWS},(_,i)=>i).sort(()=>Math.random()-.5);
-  for(let i=0;i<count;i++){
-    const cell=cells[i];
-    const row=Math.floor(cell/ENEMY_COLS);
-    const col=cell%ENEMY_COLS;
+  const maxSpawn=ENEMY_COLS;
+  const count=Math.min(maxSpawn,state.data.enemyCount+(state.wave-1));
+  // Every enemy is spawned on the very top row, but in different columns.
+  // If a wave contains fewer than 7 enemies, choose distinct columns at random.
+  const cols=Array.from({length:ENEMY_COLS},(_,i)=>i).sort(()=>Math.random()-.5).slice(0,count);
+  cols.forEach((col,i)=>{
     const boss=state.data.boss&&i===count-1;
     const hp=state.data.enemyHp*(1+(state.wave-1)*.28)*(boss?2.4:1);
-    state.enemies.push({id:`e${Date.now()}-${i}-${Math.random()}`,hp,maxHp:hp,boss,emoji:boss?'👑':'👾',row,col});
-  }
+    state.enemies.push({id:`e${Date.now()}-${i}-${Math.random()}`,hp,maxHp:hp,boss,emoji:boss?'👑':'👾',row:0,col});
+  });
   renderEnemies();updateHud();
 }
 function renderEnemies(){const lane=$('enemy-lane');lane.innerHTML='';state.enemies.forEach(e=>{const wrap=document.createElement('div');wrap.className=`enemy-wrap${e.boss?' boss':''}`;wrap.dataset.enemyId=e.id;wrap.style.gridRow=e.row+1;wrap.style.gridColumn=e.col+1;const pct=clamp(e.hp/e.maxHp*100,0,100);wrap.innerHTML=`<div class="enemy-hp"><div style="width:${pct}%"></div></div><div class="enemy-hp-text">${Math.max(0,Math.ceil(e.hp))}/${Math.ceil(e.maxHp)}</div><div class="enemy">${e.emoji}</div>`;lane.appendChild(wrap)})}
