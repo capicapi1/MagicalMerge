@@ -32,3 +32,11 @@ For GitHub Pages, upload the files to the repository root and enable Pages from 
 4. Expand skill pool and introduce all active skills by Stage 15.
 5. Add world-specific enemies, bosses and mechanics.
 6. Add sound, animation and polish.
+
+
+## v0.5 changes
+- Moving a Magical Girl automatically ends the turn.
+- Equal-level merges remain free actions and do not end the turn.
+- Each Magical Girl in an occupied lane launches its own projectile at the first enemy in that lane.
+- Manual END TURN control is hidden because movement is now the turn action.
+- Service-worker cache bumped to v5.

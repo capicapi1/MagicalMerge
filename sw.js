@@ -1,4 +1,4 @@
-const CACHE = "magicalmerge-v4";
+const CACHE = "magicalmerge-v5";
 const ASSETS = ["./","./index.html","./styles.css","./game.js","./manifest.json","./icon.svg"];
 self.addEventListener("install", event => {
   event.waitUntil(caches.open(CACHE).then(cache => cache.addAll(ASSETS)));

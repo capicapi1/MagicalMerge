@@ -1,7 +1,7 @@
 (() => {
   "use strict";
 
-  const STORAGE_KEY = "magicalMergeSave_v4";
+  const STORAGE_KEY = "magicalMergeSave_v5";
   const MAX_STAGE = 100;
   const SKILLS = [
     {id:"arcane",name:"Arcane Burst",icon:"⚡",description:"Damage every enemy.",unlockStage:1},
@@ -9,7 +9,7 @@
     {id:"meteor",name:"Starfall",icon:"☄️",description:"Heavy damage to the strongest enemy.",unlockStage:10}
   ];
   const defaultSave={accountLevel:1,accountXp:0,gems:0,coreLevel:1,stage:1,collectedUnits:0};
-  let save=loadSave(),state=null,selectedIndex=null,dragIndex=null;
+  let save=loadSave(),state=null,selectedIndex=null,dragIndex=null,moveTimer=null;
   const $=id=>document.getElementById(id);
   const clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 
@@ -27,7 +27,7 @@
     const d=stageData(stageNum);
     state={stage:stageNum,data:d,wave:1,turn:1,baseHp:100+(save.coreLevel-1)*8,maxBaseHp:100+(save.coreLevel-1)*8,
       enemies:[],board:Array(21).fill(null),skillCooldowns:{arcane:0,guard:0,meteor:0},selectedSkill:"arcane",cleared:false,pickup:null};
-    selectedIndex=null;dragIndex=null;
+    selectedIndex=null;dragIndex=null;moveTimer=null;
     $("world-label").textContent=`WORLD ${d.world}`;$("stage-label").textContent=`STAGE ${stageNum}`;
     // Start each lane with a unit near the base (right side).
     state.board[4]={level:1,element:"🌱"};state.board[11]={level:1,element:"🌱"};state.board[18]={level:1,element:"🌱"};
@@ -57,12 +57,27 @@
   }
 
   function moveUnit(from,to){
-    if(from==null||to==null||from===to||!state.board[from])return;
+    if(state?.cleared||state?.resolving||from==null||to==null||from===to||!state.board[from])return;
     const a=state.board[from],b=state.board[to];
-    if(b&&a.level===b.level){const level=a.level+1;state.board[to]={level,element:elementForLevel(level)};state.board[from]=null;log(`Merge! Lv.${a.level} + Lv.${b.level} → Lv.${level}`)}
-    else if(!b){state.board[to]=a;state.board[from]=null;log(`Magical Girl moved to line ${Math.floor(to/7)+1}.`)}
-    else{state.board[to]=a;state.board[from]=b;log("Positions swapped.")}
+    if(b&&a.level===b.level){
+      const level=a.level+1;
+      state.board[to]={level,element:elementForLevel(level)};
+      state.board[from]=null;
+      selectedIndex=null;dragIndex=null;renderBoard();
+      log(`Merge! Lv.${a.level} + Lv.${b.level} → Lv.${level}`);
+      return; // Merges do NOT end the turn.
+    }
+    if(!b){
+      state.board[to]=a;state.board[from]=null;
+      log(`Magical Girl moved to line ${Math.floor(to/7)+1}.`);
+    }else{
+      state.board[to]=a;state.board[from]=b;
+      log("Positions swapped.");
+    }
     selectedIndex=null;dragIndex=null;renderBoard();
+    // Any actual repositioning immediately ends the player's turn.
+    clearTimeout(moveTimer);
+    moveTimer=setTimeout(()=>{moveTimer=null;if(state&&!state.cleared&&!state.resolving)endTurn(true)},80);
   }
   function selectUnit(i){if(!state.board[i])return;if(selectedIndex===null){selectedIndex=i;renderBoard();return}if(selectedIndex===i){selectedIndex=null;renderBoard();return}moveUnit(selectedIndex,i)}
   function highlightSelected(){if(selectedIndex!=null)$("grid").children[selectedIndex]?.classList.add("selected-slot")}
@@ -107,15 +122,20 @@
   }
 
   function attackPhase(){
-    const attacks=[];
+    let shots=0;
     for(let row=0;row<3;row++){
-      const dmg=unitDamageForRow(row);if(!dmg)continue;
-      const target=state.enemies.find(e=>e.row===row);if(!target)continue;
-      const cols=[];for(let col=0;col<7;col++)if(state.board[row*7+col])cols.push(col);
-      attacks.push({row,target,dmg,from:row*7+cols[cols.length-1]});
+      const target=state.enemies.find(e=>e.row===row);
+      if(!target)continue;
+      for(let col=0;col<7;col++){
+        const unit=state.board[row*7+col];
+        if(!unit)continue;
+        const dmg=Math.pow(unit.level,1.55)*4.5;
+        shots++;
+        fireProjectile(row*7+col,target.id,()=>{});
+        target.hp-=dmg;
+      }
     }
-    attacks.forEach(a=>{fireProjectile(a.from,a.target.id,()=>{});a.target.hp-=a.dmg});
-    if(attacks.length)log("Your Magical Girls fire down their own lanes!");
+    if(shots)log(`${shots} Magical Girl projectile${shots===1?"":"s"} launched!`);
   }
 
   function enemyPhase(){
@@ -124,8 +144,9 @@
     if(total)log(`Enemies strike the Crystal Heart for ${total} damage.`);
   }
 
-  function endTurn(){
-    if(state.cleared)return;
+  function endTurn(auto=false){
+    if(state.cleared||state.resolving)return;
+    state.resolving=true;
     state.turn++;Object.keys(state.skillCooldowns).forEach(k=>{if(state.skillCooldowns[k]>0)state.skillCooldowns[k]--});
     attackPhase();
     // Give the player a short visual window before removing defeated enemies.
@@ -137,7 +158,8 @@
         else victory();
       }else{enemyPhase();if(state.baseHp<=0)defeat()}
       renderEnemies();updateHud();updateSkillButtons();
-    },360);
+      state.resolving=false;
+    },420);
   }
 
   function cleanupEnemies(){state.enemies=state.enemies.filter(e=>e.hp>0);renderEnemies()}
@@ -182,7 +204,7 @@
   $("base-button").onclick=()=>{updateBase();showScreen("base-screen")};
   $("back-button").onclick=()=>{$("victory-modal").classList.add("hidden");showScreen("home-screen")};
   $("base-back-button").onclick=()=>showScreen("home-screen");
-  $("end-turn-button").onclick=endTurn;
+  $("end-turn-button").style.display="none";
   $("upgrade-core-button").onclick=()=>{const cost=save.coreLevel*20;if(save.gems>=cost){save.gems-=cost;save.coreLevel++;persist()}else alert(`You need ${cost} gems.`)};
   $("next-stage-button").onclick=()=>{$("victory-modal").classList.add("hidden");newRun(state.stage===MAX_STAGE?1:state.stage+1)};
 
