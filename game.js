@@ -1,6 +1,6 @@
 (()=>{
 "use strict";
-const STORAGE_KEY="magicalMergeSave_v9";
+const STORAGE_KEY="mahouMergeSave_v1";
 const MAX_STAGE=100, PLAYER_COLS=7, PLAYER_ROWS=3, PLAYER_SIZE=21, ENEMY_COLS=7, ENEMY_ROWS=8;
 const defaultSave={accountLevel:1,accountXp:0,gems:0,coreLevel:1,stage:1,collectedUnits:0};
 let save=loadSave(),state=null,selectedIndex=null,dragIndex=null,dragOverIndex=null,activePointerId=null;
@@ -48,6 +48,6 @@ function updateHud(){if(!state)return;$('wave-label').textContent=`WAVE ${state.
 function victory(){state.cleared=true;const reward=40+state.stage*4;save.gems+=5+Math.floor(state.stage/10);grantXp(reward);save.stage=Math.min(MAX_STAGE,Math.max(save.stage,state.stage+1));persist();$('victory-title').textContent=state.stage===MAX_STAGE?'100 Stages Complete!':'Stage Clear!';$('victory-text').textContent=`You earned ${reward} account XP and gems.`;$('next-stage-button').textContent=state.stage===MAX_STAGE?'PLAY AGAIN':`STAGE ${state.stage+1}`;$('victory-modal').classList.remove('hidden')}
 function defeat(){state.cleared=true;$('victory-title').textContent='Base Defeated';$('victory-text').textContent='The Crystal Heart fell. Your account progress is safe.';$('next-stage-button').textContent='TRY AGAIN';$('victory-modal').classList.remove('hidden')}
 function log(text){$('combat-log').textContent=text}
-$('start-button').onclick=()=>newRun(save.stage);$('base-button').onclick=()=>{updateBase();showScreen('base-screen')};$('back-button').onclick=()=>{$('victory-modal').classList.add('hidden');showScreen('home-screen')};$('base-back-button').onclick=()=>showScreen('home-screen');$('upgrade-core-button').onclick=()=>{const cost=save.coreLevel*20;if(save.gems>=cost){save.gems-=cost;save.coreLevel++;persist()}else alert(`You need ${cost} gems.`)};$('next-stage-button').onclick=()=>{$('victory-modal').classList.add('hidden');newRun(state.stage===MAX_STAGE?1:state.stage+1)};
+$('start-button').onclick=()=>newRun(save.stage);$('end-turn-button').onclick=()=>endTurn();$('base-button').onclick=()=>{updateBase();showScreen('base-screen')};$('back-button').onclick=()=>{$('victory-modal').classList.add('hidden');showScreen('home-screen')};$('base-back-button').onclick=()=>showScreen('home-screen');$('upgrade-core-button').onclick=()=>{const cost=save.coreLevel*20;if(save.gems>=cost){save.gems-=cost;save.coreLevel++;persist()}else alert(`You need ${cost} gems.`)};$('next-stage-button').onclick=()=>{$('victory-modal').classList.add('hidden');newRun(state.stage===MAX_STAGE?1:state.stage+1)};
 updateHome();updateBase();$('offline-status').textContent=navigator.onLine?'Offline-ready • saved on this device':'Offline mode';window.addEventListener('online',()=>{$('offline-status').textContent='Connected • still playable offline'});window.addEventListener('offline',()=>{$('offline-status').textContent='Offline mode • game is still playable offline'});
 })();
