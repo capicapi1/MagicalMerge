@@ -38,7 +38,37 @@ function applyDamage(enemyId,damage){if(!state||state.cleared)return;const e=sta
 function showDamage(x,y){const d=document.createElement('div');d.className='damage-pop';d.textContent='-'+Math.max(1,Math.round(1));d.style.left=`${x-10}px`;d.style.top=`${y-5}px`;$('battlefield').appendChild(d);setTimeout(()=>d.remove(),550)}
 async function attackPhase(){const shots=[];for(let row=0;row<PLAYER_ROWS;row++){for(let col=0;col<PLAYER_COLS;col++){const unit=state.board[row*PLAYER_COLS+col];if(!unit)continue;const target=findTarget(col);if(!target)continue;shots.push(fireProjectile(row*PLAYER_COLS+col,target.id,Math.pow(unit.level,1.55)*4.5))}}if(shots.length)log(`${shots.length} projectile${shots.length===1?'':'s'} launched!`);await Promise.all(shots)}
 function cleanupEnemies(){state.enemies=state.enemies.filter(e=>e.hp>0);renderEnemies()}
-function enemyAdvancePhase(){let damage=0,breached=0;state.enemies.forEach(e=>e.row++);state.enemies=state.enemies.filter(e=>{if(e.row>=ENEMY_ROWS){damage+=e.boss?8:4;breached++;return false}return true});state.baseHp=clamp(state.baseHp-damage,0,state.maxBaseHp);renderEnemies();if(breached)log(`${breached} enem${breached===1?'y':'ies'} reached the divider and dealt ${damage} damage.`)}
+function enemyAdvancePhase(){
+  let damage=0,breached=0;
+  const occupied=new Set();
+  // Enemies always move downward toward the divider, but their horizontal
+  // lane changes are random. They prefer staying in their lane, with a
+  // chance to drift left/right, and never leave the 7-column field.
+  state.enemies.forEach(e=>{
+    const choices=[e.col];
+    if(e.col>0) choices.push(e.col-1);
+    if(e.col<ENEMY_COLS-1) choices.push(e.col+1);
+    // Weight the current column twice so movement feels unpredictable,
+    // rather than making every enemy zig-zag every turn.
+    choices.push(e.col);
+    let nextCol=choices[Math.floor(Math.random()*choices.length)];
+    // Avoid stacking every moving enemy into exactly the same square when
+    // there is another legal choice.
+    const candidates=choices.filter(c=>!occupied.has(`${e.row+1},${c}`));
+    if(candidates.length) nextCol=candidates[Math.floor(Math.random()*candidates.length)];
+    e.col=nextCol;
+    e.row++;
+    if(e.row<ENEMY_ROWS) occupied.add(`${e.row},${e.col}`);
+  });
+  state.enemies=state.enemies.filter(e=>{
+    if(e.row>=ENEMY_ROWS){damage+=e.boss?8:4;breached++;return false}
+    return true
+  });
+  state.baseHp=clamp(state.baseHp-damage,0,state.maxBaseHp);
+  renderEnemies();
+  if(breached) log(`${breached} enem${breached===1?'y':'ies'} reached the divider and dealt ${damage} damage.`);
+  else if(state.enemies.length) log('The enemies advance along unpredictable lanes!');
+}
 async function endTurn(){if(state.cleared||state.resolving)return;state.resolving=true;updateTurnButton();state.turn++;await attackPhase();if(state.cleared){state.resolving=false;updateTurnButton();return}cleanupEnemies();if(state.enemies.length===0){if(state.wave<state.data.waves){state.wave++;spawnWave();maybeSpawnPickup();state.resolving=false;updateHud();updateTurnButton()}else{state.resolving=false;updateTurnButton();victory()}return}enemyAdvancePhase();if(state.baseHp<=0){state.resolving=false;updateTurnButton();defeat();return}if(state.enemies.length===0){if(state.wave<state.data.waves){state.wave++;spawnWave();maybeSpawnPickup()}else{state.resolving=false;updateTurnButton();victory();return}}state.resolving=false;updateHud();updateTurnButton()}
 function updateTurnButton(){const b=$("end-turn-button");if(!b)return;b.disabled=!!state?.resolving||!!state?.cleared;b.textContent=state?.resolving?"RESOLVING…":"END TURN"}
 function maybeSpawnPickup(){state.pickup=null;if(Math.random()>.38)return;const empty=[];state.board.forEach((u,i)=>{if(!u)empty.push(i)});if(!empty.length)return;const index=empty[Math.floor(Math.random()*empty.length)],type=Math.random()<.55?'chest':'unit';state.pickup={type,index};renderPickup();log(type==='chest'?'A treasure chest appeared on the field!':'A new Magical Girl appeared on the field!')}
