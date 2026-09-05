@@ -1,19 +1,19 @@
 (()=>{
 "use strict";
 const STORAGE_KEY="mahouMergeSave_v1";
-const MAX_STAGE=100, PLAYER_COLS=7, PLAYER_ROWS=3, PLAYER_SIZE=21, ENEMY_COLS=7, ENEMY_ROWS=8;
+const MAX_STAGE=100, STAGES_PER_LEVEL=10, PLAYER_COLS=7, PLAYER_ROWS=3, PLAYER_SIZE=21, ENEMY_COLS=7, ENEMY_ROWS=8;
 const defaultSave={accountLevel:1,accountXp:0,gems:0,coreLevel:1,stage:1,collectedUnits:0};
 let save=loadSave(),state=null,selectedIndex=null,dragIndex=null,dragOverIndex=null,activePointerId=null;
 const $=id=>document.getElementById(id),clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 function loadSave(){try{return {...defaultSave,...JSON.parse(localStorage.getItem(STORAGE_KEY)||"{}")}}catch{return {...defaultSave}}}
 function persist(){localStorage.setItem(STORAGE_KEY,JSON.stringify(save));updateHome();updateBase()}
 function xpNeeded(l){return 100+(l-1)*35}
-function stageData(n){const world=Math.ceil(n/10),local=((n-1)%10)+1,waves=3+Math.floor(n/20),enemyHp=Math.round(24*Math.pow(1.075,n-1)),enemyCount=2+Math.min(5,Math.floor((n-1)/12));return{world,local,waves,enemyHp,enemyCount,boss:local===10}}
+function stageData(n){const world=Math.ceil(n/STAGES_PER_LEVEL),local=((n-1)%STAGES_PER_LEVEL)+1,waves=3+Math.floor((n-1)/20),enemyHp=Math.round(24*Math.pow(1.075,n-1)),enemyCount=2+Math.min(5,Math.floor((n-1)/12));return{world,local,waves,enemyHp,enemyCount,boss:local===STAGES_PER_LEVEL}}
 function showScreen(id){document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));$(id).classList.add("active")}
 function updateHome(){if(!$('home-account-level'))return;$('home-account-level').textContent=save.accountLevel;$('home-xp-bar').style.width=`${Math.min(100,save.accountXp/xpNeeded(save.accountLevel)*100)}%`}
 function updateBase(){if(!$('base-account-level'))return;$('base-account-level').textContent=save.accountLevel;const n=xpNeeded(save.accountLevel);$('base-xp-bar').style.width=`${Math.min(100,save.accountXp/n*100)}%`;$('base-xp-text').textContent=`${save.accountXp} / ${n} XP`;$('core-level').textContent=save.coreLevel;$('core-hp-bonus').textContent=`${(save.coreLevel-1)*8}%`}
 function grantXp(amount){save.accountXp+=amount;while(save.accountXp>=xpNeeded(save.accountLevel)){save.accountXp-=xpNeeded(save.accountLevel);save.accountLevel++;log(`Account Level ${save.accountLevel}!`)}persist()}
-function newRun(stageNum){const d=stageData(stageNum);state={stage:stageNum,data:d,wave:1,turn:1,baseHp:100+(save.coreLevel-1)*8,maxBaseHp:100+(save.coreLevel-1)*8,enemies:[],board:Array(PLAYER_SIZE).fill(null),cleared:false,resolving:false,pickup:null};selectedIndex=null;dragIndex=null;dragOverIndex=null;activePointerId=null;$('world-label').textContent=`WORLD ${d.world}`;$('stage-label').textContent=`STAGE ${stageNum}`;
+function newRun(stageNum){const d=stageData(stageNum);state={stage:stageNum,data:d,wave:1,turn:1,baseHp:100+(save.coreLevel-1)*8,maxBaseHp:100+(save.coreLevel-1)*8,enemies:[],board:Array(PLAYER_SIZE).fill(null),cleared:false,resolving:false,pickup:null,kills:0};selectedIndex=null;dragIndex=null;dragOverIndex=null;activePointerId=null;$('world-label').textContent=`LEVEL ${d.world} · 10 STAGES`;$('stage-label').textContent=`STAGE ${d.local} / 10`;
 // Start with three level-1 girls in the bottom row, one in each of the first three columns.
 state.board[18]={level:1,element:"🌱"};state.board[19]={level:1,element:"🌱"};state.board[20]={level:1,element:"🌱"};
 showScreen('game-screen');spawnWave();renderBoard();updateHud();updateTurnButton();log('Move a Magical Girl to end the turn. Same-level merges are free actions.')}
@@ -30,44 +30,68 @@ state.board[to]=a;state.board[from]=b||null;selectedIndex=null;renderBoard();log
 function selectUnit(i){if(state.resolving||state.cleared||!state.board[i])return;if(selectedIndex===null){selectedIndex=i;renderBoard();return}if(selectedIndex===i){selectedIndex=null;renderBoard();return}moveUnit(selectedIndex,i)}
 function highlightSelected(){if(selectedIndex!==null)$('grid').children[selectedIndex]?.classList.add('selected-slot')}
 function elementForLevel(lvl){const els=['🌱','🔥','💧','⚡','🌙','🌟'];return els[Math.min(els.length-1,Math.floor((lvl-1)/2))]}
-function spawnWave(){state.enemies=[];const count=Math.min(ENEMY_COLS*ENEMY_ROWS,state.data.enemyCount+(state.wave-1));for(let i=0;i<count;i++){const boss=state.data.boss&&i===count-1,hp=state.data.enemyHp*(1+(state.wave-1)*.28)*(boss?2.4:1);state.enemies.push({id:`e${Date.now()}-${i}-${Math.random()}`,hp,maxHp:hp,boss,emoji:boss?'👑':'👾',row:i%ENEMY_ROWS,col:Math.floor(i/ENEMY_ROWS)})}renderEnemies();updateHud()}
+function spawnWave(){
+  state.enemies=[];
+  const count=Math.min(ENEMY_COLS*ENEMY_ROWS,state.data.enemyCount+(state.wave-1));
+  const cells=Array.from({length:ENEMY_COLS*ENEMY_ROWS},(_,i)=>i).sort(()=>Math.random()-.5);
+  for(let i=0;i<count;i++){
+    const cell=cells[i];
+    const row=Math.floor(cell/ENEMY_COLS);
+    const col=cell%ENEMY_COLS;
+    const boss=state.data.boss&&i===count-1;
+    const hp=state.data.enemyHp*(1+(state.wave-1)*.28)*(boss?2.4:1);
+    state.enemies.push({id:`e${Date.now()}-${i}-${Math.random()}`,hp,maxHp:hp,boss,emoji:boss?'👑':'👾',row,col});
+  }
+  renderEnemies();updateHud();
+}
 function renderEnemies(){const lane=$('enemy-lane');lane.innerHTML='';state.enemies.forEach(e=>{const wrap=document.createElement('div');wrap.className=`enemy-wrap${e.boss?' boss':''}`;wrap.dataset.enemyId=e.id;wrap.style.gridRow=e.row+1;wrap.style.gridColumn=e.col+1;const pct=clamp(e.hp/e.maxHp*100,0,100);wrap.innerHTML=`<div class="enemy-hp"><div style="width:${pct}%"></div></div><div class="enemy-hp-text">${Math.max(0,Math.ceil(e.hp))}/${Math.ceil(e.maxHp)}</div><div class="enemy">${e.emoji}</div>`;lane.appendChild(wrap)})}
 function findTarget(col){return state.enemies.filter(e=>e.col===col).sort((a,b)=>b.row-a.row)[0]||null}
 function fireProjectile(fromIndex,enemyId,damage){const unit=$('grid').children[fromIndex]?.querySelector('.unit'),enemy=document.querySelector(`[data-enemy-id="${CSS.escape(enemyId)}"] .enemy`),field=$('battlefield');if(!unit||!enemy||!field){applyDamage(enemyId,damage);return Promise.resolve()}const a=unit.getBoundingClientRect(),b=enemy.getBoundingClientRect(),c=field.getBoundingClientRect(),p=document.createElement('div');p.className='projectile';$('projectiles').appendChild(p);const sx=a.left-c.left+a.width/2-5,sy=a.top-c.top+a.height/2-5,tx=b.left-c.left+b.width/2-5,ty=b.top-c.top+b.height/2-5;p.style.left=`${sx}px`;p.style.top=`${sy}px`;requestAnimationFrame(()=>p.style.transform=`translate(${tx-sx}px,${ty-sy}px)`);return new Promise(resolve=>setTimeout(()=>{p.classList.add('hit');applyDamage(enemyId,damage);setTimeout(()=>p.remove(),100);resolve()},360))}
 function applyDamage(enemyId,damage){if(!state||state.cleared)return;const e=state.enemies.find(x=>x.id===enemyId);if(!e)return;e.hp-=damage;renderEnemies();const el=document.querySelector(`[data-enemy-id="${CSS.escape(enemyId)}"] .enemy`);if(el){const f=$('battlefield').getBoundingClientRect(),r=el.getBoundingClientRect();showDamage(r.left-f.left+r.width/2,r.top-f.top,f)} }
 function showDamage(x,y){const d=document.createElement('div');d.className='damage-pop';d.textContent='-'+Math.max(1,Math.round(1));d.style.left=`${x-10}px`;d.style.top=`${y-5}px`;$('battlefield').appendChild(d);setTimeout(()=>d.remove(),550)}
 async function attackPhase(){const shots=[];for(let row=0;row<PLAYER_ROWS;row++){for(let col=0;col<PLAYER_COLS;col++){const unit=state.board[row*PLAYER_COLS+col];if(!unit)continue;const target=findTarget(col);if(!target)continue;shots.push(fireProjectile(row*PLAYER_COLS+col,target.id,Math.pow(unit.level,1.55)*4.5))}}if(shots.length)log(`${shots.length} projectile${shots.length===1?'':'s'} launched!`);await Promise.all(shots)}
-function cleanupEnemies(){state.enemies=state.enemies.filter(e=>e.hp>0);renderEnemies()}
+function cleanupEnemies(){
+  const defeated=state.enemies.filter(e=>e.hp<=0).length;
+  if(defeated){
+    state.kills+=defeated;
+    for(let i=0;i<defeated;i++){
+      if(state.kills%2===0)maybeRewardAlly();
+    }
+  }
+  state.enemies=state.enemies.filter(e=>e.hp>0);
+  renderEnemies();
+}
+function maybeRewardAlly(){
+  const empty=[];
+  state.board.forEach((u,i)=>{if(!u)empty.push(i)});
+  if(!empty.length)return;
+  if(Math.random()<0.5){
+    const index=empty[Math.floor(Math.random()*empty.length)];
+    state.board[index]={level:1,element:'🌱'};
+    save.collectedUnits=(save.collectedUnits||0)+1;
+    persist();renderBoard();
+    log(`✨ A new ally joined after ${state.kills} enemies were defeated!`);
+  }else{
+    log(`Two enemies defeated! No new ally this time.`);
+  }
+}
 function enemyAdvancePhase(){
   let damage=0,breached=0;
-  const occupied=new Set();
-  // Enemies always move downward toward the divider, but their horizontal
-  // lane changes are random. They prefer staying in their lane, with a
-  // chance to drift left/right, and never leave the 7-column field.
   state.enemies.forEach(e=>{
-    const choices=[e.col];
-    if(e.col>0) choices.push(e.col-1);
-    if(e.col<ENEMY_COLS-1) choices.push(e.col+1);
-    // Weight the current column twice so movement feels unpredictable,
-    // rather than making every enemy zig-zag every turn.
-    choices.push(e.col);
-    let nextCol=choices[Math.floor(Math.random()*choices.length)];
-    // Avoid stacking every moving enemy into exactly the same square when
-    // there is another legal choice.
-    const candidates=choices.filter(c=>!occupied.has(`${e.row+1},${c}`));
-    if(candidates.length) nextCol=candidates[Math.floor(Math.random()*candidates.length)];
-    e.col=nextCol;
     e.row++;
-    if(e.row<ENEMY_ROWS) occupied.add(`${e.row},${e.col}`);
+    const options=[e.col];
+    if(e.col>0)options.push(e.col-1);
+    if(e.col<ENEMY_COLS-1)options.push(e.col+1);
+    // Every enemy rolls independently, so two enemies can choose different paths.
+    e.col=options[Math.floor(Math.random()*options.length)];
   });
   state.enemies=state.enemies.filter(e=>{
     if(e.row>=ENEMY_ROWS){damage+=e.boss?8:4;breached++;return false}
-    return true
+    return true;
   });
   state.baseHp=clamp(state.baseHp-damage,0,state.maxBaseHp);
   renderEnemies();
-  if(breached) log(`${breached} enem${breached===1?'y':'ies'} reached the divider and dealt ${damage} damage.`);
-  else if(state.enemies.length) log('The enemies advance along unpredictable lanes!');
+  if(breached)log(`${breached} enemy${breached===1?'':'ies'} reached the divider and dealt ${damage} damage.`);
 }
 async function endTurn(){if(state.cleared||state.resolving)return;state.resolving=true;updateTurnButton();state.turn++;await attackPhase();if(state.cleared){state.resolving=false;updateTurnButton();return}cleanupEnemies();if(state.enemies.length===0){if(state.wave<state.data.waves){state.wave++;spawnWave();maybeSpawnPickup();state.resolving=false;updateHud();updateTurnButton()}else{state.resolving=false;updateTurnButton();victory()}return}enemyAdvancePhase();if(state.baseHp<=0){state.resolving=false;updateTurnButton();defeat();return}if(state.enemies.length===0){if(state.wave<state.data.waves){state.wave++;spawnWave();maybeSpawnPickup()}else{state.resolving=false;updateTurnButton();victory();return}}state.resolving=false;updateHud();updateTurnButton()}
 function updateTurnButton(){const b=$("end-turn-button");if(!b)return;b.disabled=!!state?.resolving||!!state?.cleared;b.textContent=state?.resolving?"RESOLVING…":"END TURN"}
