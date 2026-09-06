@@ -1,0 +1,12 @@
+{
+  "name": "MahouMerge",
+  "short_name": "MahouMerge",
+  "start_url": "./",
+  "display": "standalone",
+  "background_color": "#f8eff8",
+  "theme_color": "#f7d7ef",
+  "orientation": "portrait",
+  "icons": [
+    {"src":"icon.svg","sizes":"any","type":"image/svg+xml","purpose":"any maskable"}
+  ]
+}

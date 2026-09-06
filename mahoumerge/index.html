@@ -1,0 +1,120 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover,user-scalable=no">
+  <meta name="theme-color" content="#f7d7ef">
+  <meta name="description" content="MahouMerge - an offline magical-girl merge strategy game.">
+  <link rel="manifest" href="manifest.json">
+  <link rel="icon" href="icon.svg" type="image/svg+xml">
+  <link rel="stylesheet" href="styles.css">
+  <title>MahouMerge</title>
+</head>
+<body>
+  <main id="app">
+    <section id="home-screen" class="screen active">
+      <div class="brand"><div class="brand-orb">✦</div><h1>MagicalMerge</h1><p>Merge. Fight. Evolve.</p></div>
+      <div class="home-card">
+        <div class="account-line"><span>Account Level</span><strong id="home-account-level">1</strong></div>
+        <div class="xp-track"><div id="home-xp-bar" class="xp-fill"></div></div>
+        <button id="start-button" class="primary-button">START GAME</button>
+        <button id="base-button" class="secondary-button">MAGICAL BASE</button>
+      </div>
+      <p id="offline-status" class="status">Offline-ready</p>
+    </section>
+
+    <section id="game-screen" class="screen">
+      <header class="game-header">
+        <button id="back-button" class="icon-button">‹</button>
+        <div><div id="world-label">WORLD 1</div><strong id="stage-label">STAGE 1</strong></div>
+        <div class="header-stats"><span>💎 <b id="gems-label">0</b></span><span>⭐ <b id="account-label">1</b></span></div>
+      </header>
+
+      <div class="battle-hud">
+        <div><span>BASE</span><div class="hp-track"><div id="base-hp-bar" class="hp-fill"></div></div></div>
+        <div class="wave-box"><span id="wave-label">WAVE 1/3</span><small id="turn-label">TURN 1</small></div>
+      </div>
+
+      <div id="battlefield" class="battlefield">
+        <div id="enemy-lane" class="enemy-lane"></div>
+        <div class="lane-divider lane-1"></div><div class="lane-divider lane-2"></div>
+        <div id="grid" class="merge-grid" aria-label="7 by 3 merge board"></div>
+        <div id="projectiles"></div>
+      </div>
+
+      <div class="combat-log" id="combat-log">Prepare for battle...</div>
+      <div class="controls">
+        <div id="skill-buttons" class="skill-buttons"></div>
+        <button id="end-turn-button" class="primary-button compact">END TURN</button>
+      </div>
+
+      <nav class="bottom-nav" aria-label="Main navigation">
+        <button data-screen="game-screen" class="nav-item active"><span>⚔️</span><small>BATTLE</small></button>
+        <button data-screen="girls-screen" class="nav-item"><span>♟️</span><small>MAGICAL GIRLS</small></button>
+        <button data-screen="base-screen" class="nav-item"><span>⌂</span><small>BASE</small></button>
+        <button data-screen="collection-screen" class="nav-item"><span>★</span><small>COLLECTION</small></button>
+        <button data-screen="shop-screen" class="nav-item"><span>◇</span><small>SHOP</small></button>
+      </nav>
+
+      <div id="victory-modal" class="modal hidden">
+        <div class="modal-card"><div class="victory-icon">✦</div><h2 id="victory-title">Stage Clear!</h2><p id="victory-text"></p><button id="next-stage-button" class="primary-button">NEXT STAGE</button></div>
+      </div>
+    </section>
+
+    <section id="base-screen" class="screen">
+      <header class="simple-header"><button id="base-back-button" class="icon-button">‹</button><h2>Magical Base</h2></header>
+      <div class="base-card"><div class="base-core">💗</div><h2>Crystal Heart</h2><p>The core your Magical Girls protect.</p>
+        <div class="base-stat"><span>Core Level</span><strong id="core-level">1</strong></div>
+        <div class="base-stat"><span>Base HP Bonus</span><strong id="core-hp-bonus">0%</strong></div>
+        <button id="upgrade-core-button" class="primary-button">UPGRADE CORE</button>
+      </div>
+      <div class="base-card"><h3>Account Progress</h3><div class="account-line"><span>Level</span><strong id="base-account-level">1</strong></div><div class="xp-track"><div id="base-xp-bar" class="xp-fill"></div></div><p id="base-xp-text">0 / 100 XP</p></div>
+      <nav class="bottom-nav" aria-label="Main navigation">
+        <button data-screen="game-screen" class="nav-item"><span>⚔️</span><small>BATTLE</small></button>
+        <button data-screen="girls-screen" class="nav-item"><span>♟️</span><small>MAGICAL GIRLS</small></button>
+        <button data-screen="base-screen" class="nav-item active"><span>⌂</span><small>BASE</small></button>
+        <button data-screen="collection-screen" class="nav-item"><span>★</span><small>COLLECTION</small></button>
+        <button data-screen="shop-screen" class="nav-item"><span>◇</span><small>SHOP</small></button>
+      </nav>
+    </section>
+
+    <section id="girls-screen" class="screen secondary-screen">
+      <header class="simple-header"><button class="icon-button nav-back" data-screen="game-screen">‹</button><h2>Magical Girls</h2></header>
+      <div class="base-card"><h3>Your Team</h3><p>Magical Girls you have collected will appear here.</p><div class="collection-count"><strong id="girls-count">0</strong><span>collected</span></div></div>
+      <nav class="bottom-nav" aria-label="Main navigation">
+        <button data-screen="game-screen" class="nav-item"><span>⚔️</span><small>BATTLE</small></button>
+        <button data-screen="girls-screen" class="nav-item active"><span>♟️</span><small>MAGICAL GIRLS</small></button>
+        <button data-screen="base-screen" class="nav-item"><span>⌂</span><small>BASE</small></button>
+        <button data-screen="collection-screen" class="nav-item"><span>★</span><small>COLLECTION</small></button>
+        <button data-screen="shop-screen" class="nav-item"><span>◇</span><small>SHOP</small></button>
+      </nav>
+    </section>
+
+    <section id="collection-screen" class="screen secondary-screen">
+      <header class="simple-header"><button class="icon-button" data-screen="game-screen">‹</button><h2>Collection</h2></header>
+      <div class="base-card"><h3>Collection</h3><p>Enemies, Magical Girls and future sprites will be catalogued here.</p></div>
+      <nav class="bottom-nav" aria-label="Main navigation">
+        <button data-screen="game-screen" class="nav-item"><span>⚔️</span><small>BATTLE</small></button>
+        <button data-screen="girls-screen" class="nav-item"><span>♟️</span><small>MAGICAL GIRLS</small></button>
+        <button data-screen="base-screen" class="nav-item"><span>⌂</span><small>BASE</small></button>
+        <button data-screen="collection-screen" class="nav-item active"><span>★</span><small>COLLECTION</small></button>
+        <button data-screen="shop-screen" class="nav-item"><span>◇</span><small>SHOP</small></button>
+      </nav>
+    </section>
+
+    <section id="shop-screen" class="screen secondary-screen">
+      <header class="simple-header"><button class="icon-button" data-screen="game-screen">‹</button><h2>Shop</h2></header>
+      <div class="base-card"><h3>Shop</h3><p>Future shop items will be available here.</p><div class="shop-gems">💎 <strong id="shop-gems">0</strong></div></div>
+      <nav class="bottom-nav" aria-label="Main navigation">
+        <button data-screen="game-screen" class="nav-item"><span>⚔️</span><small>BATTLE</small></button>
+        <button data-screen="girls-screen" class="nav-item"><span>♟️</span><small>MAGICAL GIRLS</small></button>
+        <button data-screen="base-screen" class="nav-item"><span>⌂</span><small>BASE</small></button>
+        <button data-screen="collection-screen" class="nav-item"><span>★</span><small>COLLECTION</small></button>
+        <button data-screen="shop-screen" class="nav-item active"><span>◇</span><small>SHOP</small></button>
+      </nav>
+    </section>
+  </main>
+  <script src="game.js"></script>
+  <script>if('serviceWorker' in navigator){navigator.serviceWorker.register('sw.js').catch(()=>{});}</script>
+</body>
+</html>
