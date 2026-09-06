@@ -2,20 +2,22 @@
 "use strict";
 const STORAGE_KEY="mahouMergeSave_v1";
 const MAX_STAGE=100, STAGES_PER_LEVEL=10, PLAYER_COLS=7, PLAYER_ROWS=3, PLAYER_SIZE=21, ENEMY_COLS=7, ENEMY_ROWS=8;
-const defaultSave={accountLevel:1,accountXp:0,gems:0,coreLevel:1,stage:1,collectedUnits:0};
+const defaultSave={accountLevel:1,accountXp:0,gems:0,coreLevel:1,stage:1,collectedUnits:0,recruitedUnits:0,reserveUnits:0};
 let save=loadSave(),state=null,selectedIndex=null,dragIndex=null,dragOverIndex=null,activePointerId=null;
 const $=id=>document.getElementById(id),clamp=(v,a,b)=>Math.max(a,Math.min(b,v));
 function loadSave(){try{return {...defaultSave,...JSON.parse(localStorage.getItem(STORAGE_KEY)||"{}")}}catch{return {...defaultSave}}}
 function persist(){localStorage.setItem(STORAGE_KEY,JSON.stringify(save));updateHome();updateBase()}
 function xpNeeded(l){return 100+(l-1)*35}
+function canAddAllyInBase(){return true}
 function stageData(n){const world=Math.ceil(n/STAGES_PER_LEVEL),local=((n-1)%STAGES_PER_LEVEL)+1,waves=3+Math.floor((n-1)/20),enemyHp=Math.round(24*Math.pow(1.075,n-1)),enemyCount=2+Math.min(5,Math.floor((n-1)/12));return{world,local,waves,enemyHp,enemyCount,boss:local===STAGES_PER_LEVEL}}
 function showScreen(id){document.querySelectorAll(".screen").forEach(s=>s.classList.remove("active"));$(id).classList.add("active")}
 function updateHome(){if(!$('home-account-level'))return;$('home-account-level').textContent=save.accountLevel;$('home-xp-bar').style.width=`${Math.min(100,save.accountXp/xpNeeded(save.accountLevel)*100)}%`}
-function updateBase(){if(!$('base-account-level'))return;$('base-account-level').textContent=save.accountLevel;const n=xpNeeded(save.accountLevel);$('base-xp-bar').style.width=`${Math.min(100,save.accountXp/n*100)}%`;$('base-xp-text').textContent=`${save.accountXp} / ${n} XP`;$('core-level').textContent=save.coreLevel;$('core-hp-bonus').textContent=`${(save.coreLevel-1)*8}%`}
+function updateBase(){if(!$('base-account-level'))return;$('reserve-units').textContent=save.reserveUnits||0;$('base-account-level').textContent=save.accountLevel;const n=xpNeeded(save.accountLevel);$('base-xp-bar').style.width=`${Math.min(100,save.accountXp/n*100)}%`;$('base-xp-text').textContent=`${save.accountXp} / ${n} XP`;$('core-level').textContent=save.coreLevel;$('core-hp-bonus').textContent=`${(save.coreLevel-1)*8}%`}
 function grantXp(amount){save.accountXp+=amount;while(save.accountXp>=xpNeeded(save.accountLevel)){save.accountXp-=xpNeeded(save.accountLevel);save.accountLevel++;log(`Account Level ${save.accountLevel}!`)}persist()}
-function newRun(stageNum){const d=stageData(stageNum);state={stage:stageNum,data:d,wave:1,turn:1,baseHp:100+(save.coreLevel-1)*8,maxBaseHp:100+(save.coreLevel-1)*8,enemies:[],board:Array(PLAYER_SIZE).fill(null),cleared:false,resolving:false,pickup:null,kills:0};selectedIndex=null;dragIndex=null;dragOverIndex=null;activePointerId=null;$('world-label').textContent=`LEVEL ${d.world} · 10 STAGES`;$('stage-label').textContent=`STAGE ${d.local} / 10`;
+function newRun(stageNum){const d=stageData(stageNum);state={stage:stageNum,data:d,wave:1,turn:1,baseHp:100+(save.coreLevel-1)*8,maxBaseHp:100+(save.coreLevel-1)*8,enemies:[],board:Array(PLAYER_SIZE).fill(null),cleared:false,resolving:false,pickup:null,kills:0,killsSinceAlly:0,alliesFromStage:0};selectedIndex=null;dragIndex=null;dragOverIndex=null;activePointerId=null;$('world-label').textContent=`LEVEL ${d.world} · 10 STAGES`;$('stage-label').textContent=`STAGE ${d.local} / 10`;
 // Start with three level-1 girls in the bottom row, one in each of the first three columns.
 state.board[18]={level:1,element:"🌱"};state.board[19]={level:1,element:"🌱"};state.board[20]={level:1,element:"🌱"};
+  deployReserveUnits();
 showScreen('game-screen');spawnWave();renderBoard();updateHud();updateTurnButton();log('Move a Magical Girl to end the turn. Same-level merges are free actions.')}
 function renderBoard(){const grid=$('grid');grid.innerHTML='';state.board.forEach((unit,i)=>{const slot=document.createElement('div');slot.className='slot';slot.dataset.index=i;slot.addEventListener('click',()=>selectUnit(i));slot.addEventListener('pointerup',e=>{if(dragIndex!==null&&dragIndex!==i){e.preventDefault();moveUnit(dragIndex,i)}});if(unit){const u=document.createElement('button');u.className=`unit level${Math.min(unit.level,4)}`;u.type='button';u.innerHTML=`<span>${unit.element}</span><small>Lv.${unit.level}</small>`;u.addEventListener('click',e=>{e.stopPropagation();selectUnit(i)});u.addEventListener('pointerdown',e=>startPointerDrag(e,i,u));u.addEventListener('dragstart',e=>{dragIndex=i;u.classList.add('dragging');e.dataTransfer?.setData('text/plain',String(i))});u.addEventListener('dragend',()=>{dragIndex=null;clearDragOver();u.classList.remove('dragging')});slot.appendChild(u)}grid.appendChild(slot)});renderPickup();highlightSelected()}
 function startPointerDrag(e,i,u){if(state.resolving||state.cleared)return;e.preventDefault();activePointerId=e.pointerId;dragIndex=i;selectedIndex=i;u.classList.add('dragging');try{u.setPointerCapture(e.pointerId)}catch{}markDragOver(i)}
@@ -32,10 +34,7 @@ function highlightSelected(){if(selectedIndex!==null)$('grid').children[selected
 function elementForLevel(lvl){const els=['🌱','🔥','💧','⚡','🌙','🌟'];return els[Math.min(els.length-1,Math.floor((lvl-1)/2))]}
 function spawnWave(){
   state.enemies=[];
-  const maxSpawn=ENEMY_COLS;
-  const count=Math.min(maxSpawn,state.data.enemyCount+(state.wave-1));
-  // Every enemy is spawned on the very top row, but in different columns.
-  // If a wave contains fewer than 7 enemies, choose distinct columns at random.
+  const count=Math.min(ENEMY_COLS,state.data.enemyCount+(state.wave-1));
   const cols=Array.from({length:ENEMY_COLS},(_,i)=>i).sort(()=>Math.random()-.5).slice(0,count);
   cols.forEach((col,i)=>{
     const boss=state.data.boss&&i===count-1;
@@ -50,44 +49,62 @@ function fireProjectile(fromIndex,enemyId,damage){const unit=$('grid').children[
 function applyDamage(enemyId,damage){if(!state||state.cleared)return;const e=state.enemies.find(x=>x.id===enemyId);if(!e)return;e.hp-=damage;renderEnemies();const el=document.querySelector(`[data-enemy-id="${CSS.escape(enemyId)}"] .enemy`);if(el){const f=$('battlefield').getBoundingClientRect(),r=el.getBoundingClientRect();showDamage(r.left-f.left+r.width/2,r.top-f.top,f)} }
 function showDamage(x,y){const d=document.createElement('div');d.className='damage-pop';d.textContent='-'+Math.max(1,Math.round(1));d.style.left=`${x-10}px`;d.style.top=`${y-5}px`;$('battlefield').appendChild(d);setTimeout(()=>d.remove(),550)}
 async function attackPhase(){const shots=[];for(let row=0;row<PLAYER_ROWS;row++){for(let col=0;col<PLAYER_COLS;col++){const unit=state.board[row*PLAYER_COLS+col];if(!unit)continue;const target=findTarget(col);if(!target)continue;shots.push(fireProjectile(row*PLAYER_COLS+col,target.id,Math.pow(unit.level,1.55)*4.5))}}if(shots.length)log(`${shots.length} projectile${shots.length===1?'':'s'} launched!`);await Promise.all(shots)}
+function deployReserveUnits(){
+  const reserve=Math.max(0,save.reserveUnits||0);
+  if(!reserve)return;
+  const empty=[];state.board.forEach((u,i)=>{if(!u)empty.push(i)});
+  const amount=Math.min(reserve,empty.length);
+  for(let i=0;i<amount;i++)state.board[empty[i]]={level:1,element:'🌱'};
+  if(amount){save.reserveUnits-=amount;persist();renderBoard();}
+}
+
+function canAddAlly(){return state.board.some(u=>!u)}
+function addAlly(reason,placeNow=true){
+  save.collectedUnits=(save.collectedUnits||0)+1;
+  save.recruitedUnits=(save.recruitedUnits||0)+1;
+  if(placeNow&&canAddAlly()){
+    const empty=[];state.board.forEach((u,i)=>{if(!u)empty.push(i)});
+    const index=empty[Math.floor(Math.random()*empty.length)];
+    state.board[index]={level:1,element:'🌱'};
+    state.alliesFromStage=(state.alliesFromStage||0)+1;
+    persist();renderBoard();
+    log(`✨ New Magical Girl joined: ${reason}`);
+    return true;
+  }
+  save.reserveUnits=(save.reserveUnits||0)+1;
+  persist();
+  log(`✨ New Magical Girl added to your reserve: ${reason}`);
+  return true;
+}
+function maybeRewardAlly(){
+  if(Math.random()<0.5)return addAlly('a 50% reward triggered after 2 kills',canAddAlly());
+  log('Two enemies defeated — no ally this time.');
+  return false;
+}
 function cleanupEnemies(){
   const defeated=state.enemies.filter(e=>e.hp<=0).length;
   if(defeated){
-    state.kills+=defeated;
     for(let i=0;i<defeated;i++){
-      if(state.kills%2===0)maybeRewardAlly();
+      state.kills++;state.killsSinceAlly++;
+      if(state.killsSinceAlly>=5){
+        if(addAlly('5 enemies defeated')) state.killsSinceAlly=0;
+      } else if(state.kills%2===0){
+        maybeRewardAlly();
+      }
     }
   }
   state.enemies=state.enemies.filter(e=>e.hp>0);
   renderEnemies();
 }
-function maybeRewardAlly(){
-  const empty=[];
-  state.board.forEach((u,i)=>{if(!u)empty.push(i)});
-  if(!empty.length)return;
-  if(Math.random()<0.5){
-    const index=empty[Math.floor(Math.random()*empty.length)];
-    state.board[index]={level:1,element:'🌱'};
-    save.collectedUnits=(save.collectedUnits||0)+1;
-    persist();renderBoard();
-    log(`✨ A new ally joined after ${state.kills} enemies were defeated!`);
-  }else{
-    log(`Two enemies defeated! No new ally this time.`);
-  }
-}
 function enemyAdvancePhase(){
   let damage=0,breached=0;
   state.enemies.forEach(e=>{
+    // Enemies only advance downward. Their column never changes.
     e.row++;
-    const options=[e.col];
-    if(e.col>0)options.push(e.col-1);
-    if(e.col<ENEMY_COLS-1)options.push(e.col+1);
-    // Every enemy rolls independently, so two enemies can choose different paths.
-    e.col=options[Math.floor(Math.random()*options.length)];
   });
   state.enemies=state.enemies.filter(e=>{
     if(e.row>=ENEMY_ROWS){damage+=e.boss?8:4;breached++;return false}
-    return true;
+    return true
   });
   state.baseHp=clamp(state.baseHp-damage,0,state.maxBaseHp);
   renderEnemies();
@@ -99,9 +116,10 @@ function maybeSpawnPickup(){state.pickup=null;if(Math.random()>.38)return;const 
 function renderPickup(){document.querySelectorAll('.pickup').forEach(x=>x.remove());if(!state?.pickup)return;const slot=$('grid').children[state.pickup.index];if(!slot)return;const p=document.createElement('button');p.className='pickup';p.type='button';p.textContent=state.pickup.type==='chest'?'🎁':'✨';p.onclick=e=>{e.stopPropagation();collectPickup()};slot.appendChild(p)}
 function collectPickup(){if(!state?.pickup||state.resolving)return;const {type,index}=state.pickup;if(type==='chest'){const gems=5+Math.floor(Math.random()*6);save.gems+=gems;grantXp(12);log(`Chest opened! +${gems} gems.`)}else{state.board[index]={level:1,element:'🌱'};save.collectedUnits=(save.collectedUnits||0)+1;log('New Magical Girl added to the field!')}state.pickup=null;persist();renderBoard();updateHud()}
 function updateHud(){if(!state)return;$('wave-label').textContent=`WAVE ${state.wave}/${state.data.waves}`;$('turn-label').textContent=`TURN ${state.turn}`;$('base-hp-bar').style.width=`${clamp(state.baseHp/state.maxBaseHp*100,0,100)}%`;$('gems-label').textContent=save.gems;$('account-label').textContent=save.accountLevel}
-function victory(){state.cleared=true;const reward=40+state.stage*4;save.gems+=5+Math.floor(state.stage/10);grantXp(reward);save.stage=Math.min(MAX_STAGE,Math.max(save.stage,state.stage+1));persist();$('victory-title').textContent=state.stage===MAX_STAGE?'100 Stages Complete!':'Stage Clear!';$('victory-text').textContent=`You earned ${reward} account XP and gems.`;$('next-stage-button').textContent=state.stage===MAX_STAGE?'PLAY AGAIN':`STAGE ${state.stage+1}`;$('victory-modal').classList.remove('hidden')}
+function victory(){state.cleared=true;const reward=40+state.stage*4;save.gems+=5+Math.floor(state.stage/10);grantXp(reward);addAlly('stage completion reward',false);save.stage=Math.min(MAX_STAGE,Math.max(save.stage,state.stage+1));persist();$('victory-title').textContent=state.stage===MAX_STAGE?'100 Stages Complete!':'Stage Clear!';$('victory-text').textContent=`You earned ${reward} account XP and gems.`;$('next-stage-button').textContent=state.stage===MAX_STAGE?'PLAY AGAIN':`STAGE ${state.stage+1}`;$('victory-modal').classList.remove('hidden')}
 function defeat(){state.cleared=true;$('victory-title').textContent='Base Defeated';$('victory-text').textContent='The Crystal Heart fell. Your account progress is safe.';$('next-stage-button').textContent='TRY AGAIN';$('victory-modal').classList.remove('hidden')}
 function log(text){$('combat-log').textContent=text}
-$('start-button').onclick=()=>newRun(save.stage);$('end-turn-button').onclick=()=>endTurn();$('base-button').onclick=()=>{updateBase();showScreen('base-screen')};$('back-button').onclick=()=>{$('victory-modal').classList.add('hidden');showScreen('home-screen')};$('base-back-button').onclick=()=>showScreen('home-screen');$('upgrade-core-button').onclick=()=>{const cost=save.coreLevel*20;if(save.gems>=cost){save.gems-=cost;save.coreLevel++;persist()}else alert(`You need ${cost} gems.`)};$('next-stage-button').onclick=()=>{$('victory-modal').classList.add('hidden');newRun(state.stage===MAX_STAGE?1:state.stage+1)};
+$('start-button').onclick=()=>newRun(save.stage);$('end-turn-button').onclick=()=>endTurn();$('base-button').onclick=()=>{updateBase();showScreen('base-screen')};$('back-button').onclick=()=>{$('victory-modal').classList.add('hidden');showScreen('home-screen')};$('base-back-button').onclick=()=>showScreen('home-screen');$('recruit-button')?.addEventListener('click',()=>{const cost=15;if(save.gems>=cost&&canAddAllyInBase()){save.gems-=cost;save.recruitedUnits=(save.recruitedUnits||0)+1;save.collectedUnits=(save.collectedUnits||0)+1;save.reserveUnits=(save.reserveUnits||0)+1;persist();updateBase();alert('✨ A new Magical Girl was added to your reserve!')}else if(!canAddAllyInBase()){alert('No room in the field during a stage. Recruitment is available between stages.')}else alert(`You need ${cost} gems.`)});
+  $('upgrade-core-button').onclick=()=>{const cost=save.coreLevel*20;if(save.gems>=cost){save.gems-=cost;save.coreLevel++;persist()}else alert(`You need ${cost} gems.`)};$('next-stage-button').onclick=()=>{$('victory-modal').classList.add('hidden');newRun(state.stage===MAX_STAGE?1:state.stage+1)};
 updateHome();updateBase();$('offline-status').textContent=navigator.onLine?'Offline-ready • saved on this device':'Offline mode';window.addEventListener('online',()=>{$('offline-status').textContent='Connected • still playable offline'});window.addEventListener('offline',()=>{$('offline-status').textContent='Offline mode • game is still playable offline'});
 })();
